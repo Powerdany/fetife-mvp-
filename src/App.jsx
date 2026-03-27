@@ -192,7 +192,100 @@ function Dashboard({ ventes, achats, depenses, dettes }) {
   )
 }
 
+function AuthScreen({
+  mode,
+  email,
+  password,
+  loading,
+  error,
+  info,
+  onEmailChange,
+  onPasswordChange,
+  onSubmit,
+  onToggleMode,
+}) {
+  const isSignIn = mode === 'signin'
+
+  return (
+    <div className="min-h-screen bg-white flex items-center justify-center px-4 py-8">
+      <div className="w-full max-w-sm rounded-3xl border border-green-100 bg-white p-6 shadow-sm">
+        <h1 className="text-5xl font-bold text-green-700 text-center mb-2">fetife</h1>
+        <p className="text-gray-500 text-center mb-8">Gérez votre activité plus facilement</p>
+
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            onSubmit()
+          }}
+        >
+          <div className="text-left">
+            <label htmlFor="auth-email" className="block text-sm font-medium text-gray-700 mb-1">
+              Email
+            </label>
+            <input
+              id="auth-email"
+              type="email"
+              value={email}
+              onChange={(e) => onEmailChange(e.target.value)}
+              placeholder="exemple@mail.com"
+              autoComplete="email"
+              className="w-full px-4 py-3 rounded-xl border border-gray-300 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              required
+            />
+          </div>
+
+          <div className="text-left">
+            <label htmlFor="auth-password" className="block text-sm font-medium text-gray-700 mb-1">
+              Mot de passe
+            </label>
+            <input
+              id="auth-password"
+              type="password"
+              value={password}
+              onChange={(e) => onPasswordChange(e.target.value)}
+              placeholder="********"
+              autoComplete={isSignIn ? 'current-password' : 'new-password'}
+              className="w-full px-4 py-3 rounded-xl border border-gray-300 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              required
+            />
+          </div>
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          {info && <p className="text-sm text-green-700">{info}</p>}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full mt-2 py-3 rounded-xl bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-lg font-bold shadow-sm transition-colors"
+          >
+            {loading ? 'Chargement...' : isSignIn ? 'Se connecter' : "S'inscrire"}
+          </button>
+        </form>
+
+        <button
+          type="button"
+          onClick={onToggleMode}
+          className="mt-4 w-full text-sm font-medium text-green-700 hover:text-green-800"
+        >
+          {isSignIn ? 'Créer un compte' : 'Déjà un compte ? Se connecter'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function App() {
+  const [session, setSession] = useState(null)
+  const [user, setUser] = useState(null)
+  const [authLoading, setAuthLoading] = useState(false)
+  const [authInitLoading, setAuthInitLoading] = useState(true)
+  const [authMode, setAuthMode] = useState('signin')
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [authInfo, setAuthInfo] = useState('')
+
   const [screen, setScreen] = useState('home')
   const [article, setArticle] = useState('')
   const [prix, setPrix] = useState('')
@@ -218,6 +311,77 @@ function App() {
   const [montantDette, setMontantDette] = useState('')
   const [descriptionDette, setDescriptionDette] = useState('')
   const [confirmationDetteVisible, setConfirmationDetteVisible] = useState(false)
+
+  const storageKey = user?.id ? `${STORAGE_KEY}.${user.id}` : STORAGE_KEY
+
+  useEffect(() => {
+    let mounted = true
+
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!mounted) return
+        const currentSession = data?.session ?? null
+        setSession(currentSession)
+        setUser(currentSession?.user ?? null)
+      })
+      .finally(() => {
+        if (mounted) {
+          setAuthInitLoading(false)
+        }
+      })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession)
+      setUser(nextSession?.user ?? null)
+    })
+
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  const handleAuthSubmit = async () => {
+    const email = authEmail.trim()
+    const password = authPassword
+
+    if (!email || !password) {
+      setAuthError('Veuillez remplir email et mot de passe.')
+      return
+    }
+
+    setAuthLoading(true)
+    setAuthError('')
+    setAuthInfo('')
+
+    try {
+      if (authMode === 'signin') {
+        const { error } = await supabase.auth.signInWithPassword({ email, password })
+        if (error) throw error
+      } else {
+        const { error } = await supabase.auth.signUp({ email, password })
+        if (error) throw error
+        setAuthInfo('Compte créé. Vérifiez votre email si une confirmation est demandée.')
+        setAuthMode('signin')
+      }
+    } catch (err) {
+      setAuthError(err?.message || "Une erreur est survenue pendant l'authentification.")
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+    setScreen('home')
+    setVentes([])
+    setAchats([])
+    setDepenses([])
+    setDettes([])
+  }
 
   const openVente = () => {
     setScreen('vente')
@@ -248,6 +412,8 @@ function App() {
   }
 
   const handleEnregistrer = async () => {
+    if (!user?.id) return
+
     const articleTrimmed = article.trim()
     const q = safeNumber(quantite)
     const p = safeNumber(prix)
@@ -267,6 +433,7 @@ function App() {
           prix_vente: p,
           quantite: q,
           total: montant,
+          user_id: user.id,
         })
         .select('*')
         .single()
@@ -293,6 +460,8 @@ function App() {
   }
 
   const handleEnregistrerAchat = async () => {
+    if (!user?.id) return
+
     const articleTrimmed = achatArticle.trim()
     const q = safeNumber(achatQuantite)
     const p = safeNumber(achatPrix)
@@ -312,6 +481,7 @@ function App() {
           prix_achat: p,
           quantite: q,
           total: montant,
+          user_id: user.id,
         })
         .select('*')
         .single()
@@ -338,6 +508,8 @@ function App() {
   }
 
   const handleEnregistrerDepense = async () => {
+    if (!user?.id) return
+
     if (montantDepense === '') {
       return
     }
@@ -352,6 +524,7 @@ function App() {
         .insert({
           categorie: categorieDepense,
           montant,
+          user_id: user.id,
         })
         .select('*')
         .single()
@@ -376,6 +549,8 @@ function App() {
   }
 
   const handleEnregistrerDette = async () => {
+    if (!user?.id) return
+
     const nomTrimmed = nomPersonneDette.trim()
     const montant = safeNumber(montantDette)
     if (!nomTrimmed) {
@@ -392,6 +567,7 @@ function App() {
           type: typeDette,
           montant,
           description: descriptionDette.trim(),
+          user_id: user.id,
         })
         .select('*')
         .single()
@@ -426,11 +602,16 @@ function App() {
       // On essaie de trier par une colonne date (si elle existe dans ton schéma),
       // puis on filtre "aujourd'hui" côté client pour éviter les problèmes de fuseau.
       for (const col of dateColumns) {
-        const { data, error } = await supabase.from(table).select('*').order(col, { ascending: false }).limit(limit)
+        const { data, error } = await supabase
+          .from(table)
+          .select('*')
+          .eq('user_id', user.id)
+          .order(col, { ascending: false })
+          .limit(limit)
         if (!error) return data || []
       }
 
-      const { data, error } = await supabase.from(table).select('*').limit(limit)
+      const { data, error } = await supabase.from(table).select('*').eq('user_id', user.id).limit(limit)
       if (error) throw error
       return data || []
     }
@@ -442,7 +623,11 @@ function App() {
       const achatsRows = await fetchForToday('achats', ['created_at', 'createdAt', 'created_date'])
       const depensesRows = await fetchForToday('depenses', ['created_at', 'createdAt', 'created_date'])
 
-      const { data: dettesRows, error: dettesError } = await supabase.from('dettes').select('*').limit(1000)
+      const { data: dettesRows, error: dettesError } = await supabase
+        .from('dettes')
+        .select('*')
+        .eq('user_id', user.id)
+        .limit(1000)
       if (dettesError) throw dettesError
 
       if (cancelled) return
@@ -453,11 +638,21 @@ function App() {
       setDettes((dettesRows || []).map(normalizeDetteRow))
     }
 
+    if (!user?.id) {
+      setVentes([])
+      setAchats([])
+      setDepenses([])
+      setDettes([])
+      return () => {
+        cancelled = true
+      }
+    }
+
     loadFromSupabase()
       .catch((err) => {
         console.error("Erreur chargement Supabase (fallback localStorage) :", err)
         try {
-          const raw = localStorage.getItem(STORAGE_KEY)
+          const raw = localStorage.getItem(storageKey)
           if (!raw) return
           const parsed = JSON.parse(raw)
           const today = new Date()
@@ -479,12 +674,13 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [user?.id, storageKey])
 
   useEffect(() => {
     try {
+      if (!user?.id) return
       localStorage.setItem(
-        STORAGE_KEY,
+        storageKey,
         JSON.stringify({
           ventes,
           achats,
@@ -495,7 +691,36 @@ function App() {
     } catch {
       // Storage may be blocked; app will still work in-memory.
     }
-  }, [ventes, achats, depenses, dettes])
+  }, [ventes, achats, depenses, dettes, storageKey, user?.id])
+
+  if (authInitLoading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center px-4">
+        <p className="text-gray-500">Chargement...</p>
+      </div>
+    )
+  }
+
+  if (!session || !user) {
+    return (
+      <AuthScreen
+        mode={authMode}
+        email={authEmail}
+        password={authPassword}
+        loading={authLoading}
+        error={authError}
+        info={authInfo}
+        onEmailChange={setAuthEmail}
+        onPasswordChange={setAuthPassword}
+        onSubmit={handleAuthSubmit}
+        onToggleMode={() => {
+          setAuthError('')
+          setAuthInfo('')
+          setAuthMode((prev) => (prev === 'signin' ? 'signup' : 'signin'))
+        }}
+      />
+    )
+  }
 
   if (screen === 'vente') {
     return (
@@ -859,6 +1084,15 @@ function App() {
 
   return (
     <div className="min-h-screen bg-white flex flex-col items-center px-4 py-8">
+      <div className="w-full max-w-sm flex justify-end mb-2">
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className="text-xs text-gray-500 hover:text-gray-700 underline underline-offset-2"
+        >
+          Déconnexion
+        </button>
+      </div>
       <h1 className="text-5xl font-bold text-green-700 mb-2">fetife</h1>
       <p className="text-gray-500 text-lg mb-10">Gérez votre activité facilement</p>
       <div className="w-full max-w-sm">
