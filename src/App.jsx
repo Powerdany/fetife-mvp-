@@ -210,7 +210,7 @@ function AuthScreen({
     <div className="min-h-screen bg-white flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-sm rounded-3xl border border-green-100 bg-white p-6 shadow-sm">
         <div className="flex justify-center mb-2">
-          <img src="/logo_fetife.png" alt="fetife" className="h-12" />
+          <img src="/logo_fetife.png" alt="fetife" className="h-20" />
         </div>
         <p className="text-gray-500 text-center mb-8">Gérez votre activité plus facilement</p>
 
@@ -1096,7 +1096,7 @@ function App() {
         </button>
       </div>
       <div className="mb-2">
-        <img src="/logo_fetife.png" alt="fetife" className="h-12" />
+        <img src="/logo_fetife.png" alt="fetife" className="h-20" />
       </div>
       <p className="text-gray-500 text-lg mb-10">Gérez votre activité facilement</p>
       <div className="w-full max-w-sm">
