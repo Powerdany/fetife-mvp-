@@ -314,7 +314,36 @@ function App() {
   const [descriptionDette, setDescriptionDette] = useState('')
   const [confirmationDetteVisible, setConfirmationDetteVisible] = useState(false)
 
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState(null)
+
   const storageKey = user?.id ? `${STORAGE_KEY}.${user.id}` : STORAGE_KEY
+
+  const isAndroidChromeForInstall =
+    typeof navigator !== 'undefined' &&
+    /Android/i.test(navigator.userAgent) &&
+    /Chrome/i.test(navigator.userAgent) &&
+    !/Edg/i.test(navigator.userAgent)
+
+  const isStandalone =
+    typeof window !== 'undefined' &&
+    (window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator?.standalone === true)
+
+  useEffect(() => {
+    const onBeforeInstallPrompt = (e) => {
+      e.preventDefault()
+      setDeferredInstallPrompt(e)
+    }
+    const onAppInstalled = () => {
+      setDeferredInstallPrompt(null)
+    }
+    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt)
+    window.addEventListener('appinstalled', onAppInstalled)
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt)
+      window.removeEventListener('appinstalled', onAppInstalled)
+    }
+  }, [])
 
   useEffect(() => {
     let mounted = true
@@ -1084,8 +1113,20 @@ function App() {
     )
   }
 
+  const showInstallBanner =
+    screen === 'home' &&
+    !isStandalone &&
+    isAndroidChromeForInstall &&
+    deferredInstallPrompt != null
+
+  const handlePwaInstall = async () => {
+    if (!deferredInstallPrompt) return
+    deferredInstallPrompt.prompt()
+    setDeferredInstallPrompt(null)
+  }
+
   return (
-    <div className="min-h-screen bg-white flex flex-col items-center px-4 py-8">
+    <div className="min-h-screen bg-white flex flex-col items-center px-4 py-8 pb-[max(2rem,env(safe-area-inset-bottom,0px)+5.5rem)]">
       <div className="w-full max-w-sm flex justify-end mb-2">
         <button
           type="button"
@@ -1126,6 +1167,28 @@ function App() {
           ))}
         </div>
       </div>
+
+      {showInstallBanner && (
+        <div
+          className="fixed bottom-0 left-0 right-0 z-50 border-t border-green-200/80 bg-green-50/95 backdrop-blur-sm px-4 py-3 shadow-[0_-4px_20px_rgba(22,101,52,0.08)]"
+          style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
+          role="region"
+          aria-label="Installation de l'application"
+        >
+          <div className="mx-auto flex max-w-sm items-center justify-between gap-3">
+            <p className="text-sm font-medium text-green-900/90 leading-snug">
+              Installez fetife sur votre téléphone
+            </p>
+            <button
+              type="button"
+              onClick={handlePwaInstall}
+              className="shrink-0 rounded-xl bg-[#166534] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-green-800 active:bg-green-900"
+            >
+              Installer
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
