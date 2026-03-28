@@ -209,7 +209,9 @@ function AuthScreen({
   return (
     <div className="min-h-screen bg-white flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-sm rounded-3xl border border-green-100 bg-white p-6 shadow-sm">
-        <h1 className="text-5xl font-bold text-green-700 text-center mb-2">fetife</h1>
+        <div className="flex justify-center mb-2">
+          <img src="/logo_fetife.png" alt="fetife" className="h-12" />
+        </div>
         <p className="text-gray-500 text-center mb-8">Gérez votre activité plus facilement</p>
 
         <form
@@ -1093,7 +1095,9 @@ function App() {
           Déconnexion
         </button>
       </div>
-      <h1 className="text-5xl font-bold text-green-700 mb-2">fetife</h1>
+      <div className="mb-2">
+        <img src="/logo_fetife.png" alt="fetife" className="h-12" />
+      </div>
       <p className="text-gray-500 text-lg mb-10">Gérez votre activité facilement</p>
       <div className="w-full max-w-sm">
         <Dashboard ventes={ventes} achats={achats} depenses={depenses} dettes={dettes} />
