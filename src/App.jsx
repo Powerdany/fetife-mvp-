@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { jsPDF } from 'jspdf'
 import './App.css'
 import { supabase } from './supabase'
 
@@ -110,26 +111,69 @@ function getPeriodBounds(periodKey) {
   }
 }
 
-function getMostSoldArticle(ventesRows) {
-  const soldByArticle = new Map()
+function getMostProfitableArticle(ventesRows, achatsRows) {
+  const profitByArticle = new Map()
 
   for (const vente of ventesRows) {
     const articleName = (vente?.article || '').trim()
     if (!articleName) continue
-    const qty = safeNumber(vente?.quantite) || 1
-    soldByArticle.set(articleName, (soldByArticle.get(articleName) || 0) + qty)
+    profitByArticle.set(articleName, (profitByArticle.get(articleName) || 0) + safeNumber(vente?.montant))
   }
 
-  let topArticle = ''
-  let topQty = 0
-  for (const [name, qty] of soldByArticle.entries()) {
-    if (qty > topQty) {
-      topArticle = name
-      topQty = qty
+  for (const achat of achatsRows) {
+    const articleName = (achat?.article || '').trim()
+    if (!articleName) continue
+    profitByArticle.set(articleName, (profitByArticle.get(articleName) || 0) - safeNumber(achat?.montant))
+  }
+
+  let bestArticle = ''
+  let bestProfit = -Infinity
+  for (const [name, profit] of profitByArticle.entries()) {
+    if (profit > bestProfit) {
+      bestArticle = name
+      bestProfit = profit
     }
   }
 
-  return topArticle
+  return {
+    name: bestArticle,
+    profit: Number.isFinite(bestProfit) ? bestProfit : 0,
+  }
+}
+
+function getPeriodLabel(periodKey) {
+  if (periodKey === 'today') return "Aujourd'hui"
+  if (periodKey === 'week') return 'Cette semaine'
+  return 'Ce mois'
+}
+
+function getPeriodWithDate(periodKey) {
+  const nowLabel = new Date().toLocaleDateString('fr-FR')
+  return `${getPeriodLabel(periodKey)} - ${nowLabel}`
+}
+
+async function loadImageAsDataUrl(url) {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Impossible de charger le logo depuis ${url}`)
+  }
+
+  const blob = await response.blob()
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => resolve(reader.result)
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+}
+
+function sanitizeForFileName(value) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()
 }
 
 function Dashboard({ ventes, achats, depenses, dettes, onOpenReports }) {
@@ -244,9 +288,79 @@ function Dashboard({ ventes, achats, depenses, dettes, onOpenReports }) {
   )
 }
 
-function ReportsScreen({ period, data, loading, onChangePeriod, onBack }) {
+function ReportsScreen({ period, data, loading, userEmail, onChangePeriod, onBack }) {
   const benefice = data.totalVentes - data.totalAchats - data.totalDepenses
   const isPositive = benefice >= 0
+  const periodWithDate = getPeriodWithDate(period)
+  const [pdfNoticeVisible, setPdfNoticeVisible] = useState(false)
+
+  useEffect(() => {
+    if (!pdfNoticeVisible) return
+    const timer = window.setTimeout(() => {
+      setPdfNoticeVisible(false)
+    }, 2200)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [pdfNoticeVisible])
+
+  const handleDownloadPdf = async () => {
+    try {
+      const doc = new jsPDF()
+      const logoDataUrl = await loadImageAsDataUrl('/logo_fetife.png')
+
+      doc.addImage(logoDataUrl, 'PNG', 14, 10, 28, 28)
+      doc.setFontSize(18)
+      doc.text("Rapport d'activité fetife", 50, 20)
+      doc.setFontSize(11)
+      doc.text(`Période: ${periodWithDate}`, 14, 46)
+      doc.text(`Email: ${userEmail || 'Non disponible'}`, 14, 54)
+
+      const rows = [
+        ['Total des ventes', `${formatAmount(data.totalVentes)} FCFA`],
+        ['Total des achats', `${formatAmount(data.totalAchats)} FCFA`],
+        ['Total des dépenses', `${formatAmount(data.totalDepenses)} FCFA`],
+        ['Bénéfice net', `${formatAmount(benefice)} FCFA`],
+      ]
+
+      let y = 68
+      doc.setFillColor(22, 163, 74)
+      doc.rect(14, y, 182, 10, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(11)
+      doc.text('Indicateur', 18, y + 7)
+      doc.text('Montant', 130, y + 7)
+
+      y += 10
+      doc.setTextColor(0, 0, 0)
+      for (const [label, value] of rows) {
+        doc.rect(14, y, 182, 10)
+        doc.text(label, 18, y + 7)
+        doc.text(value, 130, y + 7)
+        y += 10
+      }
+
+      y += 8
+      const profitableArticleText = data.mostProfitableArticleName
+        ? `${data.mostProfitableArticleName} (${formatAmount(data.mostProfitableArticleProfit)} FCFA)`
+        : 'Aucun article rentable sur cette période'
+      doc.setFontSize(12)
+      doc.text(`Article le plus rentable: ${profitableArticleText}`, 14, y)
+
+      doc.setFontSize(10)
+      doc.setTextColor(90, 90, 90)
+      doc.text('Généré par fetife - fetife-mvp.vercel.app', 14, 285)
+
+      const filePeriod = sanitizeForFileName(getPeriodLabel(period))
+      const fileDate = new Date().toISOString().slice(0, 10)
+      doc.save(`fetife-rapport-${filePeriod}-${fileDate}.pdf`)
+      setPdfNoticeVisible(true)
+    } catch (error) {
+      console.error('Erreur génération PDF :', error)
+      window.alert("Impossible de générer le PDF pour l'instant. Réessayez.")
+    }
+  }
 
   return (
     <div className="min-h-screen bg-white flex flex-col px-4 py-8 max-w-sm mx-auto w-full">
@@ -332,12 +446,27 @@ function ReportsScreen({ period, data, loading, onChangePeriod, onBack }) {
             </span>
           </div>
           <div className="rounded-2xl border border-gray-200 bg-white p-4">
-            <p className="text-sm font-semibold text-gray-600">Article le plus vendu</p>
+            <p className="text-sm font-semibold text-gray-600">Article le plus rentable</p>
             <p className="text-lg font-bold text-gray-900 mt-1">
-              {data.mostSoldArticle || 'Aucun article vendu sur cette période'}
+              {data.mostProfitableArticleName
+                ? `${data.mostProfitableArticleName} (${formatAmount(data.mostProfitableArticleProfit)} FCFA)`
+                : 'Aucun article rentable sur cette période'}
             </p>
           </div>
         </div>
+      )}
+      <button
+        type="button"
+        onClick={handleDownloadPdf}
+        disabled={loading}
+        className="w-full mt-6 py-3 rounded-xl bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold transition-colors"
+      >
+        Télécharger PDF 📄
+      </button>
+      {pdfNoticeVisible && (
+        <p className="mt-3 text-center text-sm font-semibold text-green-700" role="status" aria-live="polite">
+          PDF téléchargé ✅
+        </p>
       )}
       <WhatsAppSupportButton />
     </div>
@@ -496,7 +625,8 @@ function App() {
     totalVentes: 0,
     totalAchats: 0,
     totalDepenses: 0,
-    mostSoldArticle: '',
+    mostProfitableArticleName: '',
+    mostProfitableArticleProfit: 0,
   })
 
   const storageKey = user?.id ? `${STORAGE_KEY}.${user.id}` : STORAGE_KEY
@@ -964,11 +1094,13 @@ function App() {
 
         if (cancelled) return
 
+        const mostProfitableArticle = getMostProfitableArticle(ventesRows, achatsRows)
         setReportsData({
           totalVentes: ventesRows.reduce((acc, v) => acc + safeNumber(v.montant), 0),
           totalAchats: achatsRows.reduce((acc, a) => acc + safeNumber(a.montant), 0),
           totalDepenses: depensesRows.reduce((acc, d) => acc + safeNumber(d.montant), 0),
-          mostSoldArticle: getMostSoldArticle(ventesRows),
+          mostProfitableArticleName: mostProfitableArticle.name,
+          mostProfitableArticleProfit: mostProfitableArticle.profit,
         })
       } catch (err) {
         console.error('Erreur chargement rapports :', err)
@@ -977,7 +1109,8 @@ function App() {
             totalVentes: 0,
             totalAchats: 0,
             totalDepenses: 0,
-            mostSoldArticle: '',
+            mostProfitableArticleName: '',
+            mostProfitableArticleProfit: 0,
           })
         }
       } finally {
@@ -1391,6 +1524,7 @@ function App() {
         period={reportPeriod}
         data={reportsData}
         loading={reportsLoading}
+        userEmail={user?.email || ''}
         onChangePeriod={setReportPeriod}
         onBack={goHome}
       />
