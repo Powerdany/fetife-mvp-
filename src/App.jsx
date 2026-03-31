@@ -88,7 +88,51 @@ function normalizeDetteRow(row) {
   }
 }
 
-function Dashboard({ ventes, achats, depenses, dettes }) {
+function getPeriodBounds(periodKey) {
+  const now = new Date()
+  const start = new Date(now)
+
+  if (periodKey === 'today') {
+    start.setHours(0, 0, 0, 0)
+  } else if (periodKey === 'week') {
+    const day = start.getDay()
+    const diffToMonday = day === 0 ? -6 : 1 - day
+    start.setDate(start.getDate() + diffToMonday)
+    start.setHours(0, 0, 0, 0)
+  } else {
+    start.setDate(1)
+    start.setHours(0, 0, 0, 0)
+  }
+
+  return {
+    startIso: start.toISOString(),
+    endIso: now.toISOString(),
+  }
+}
+
+function getMostSoldArticle(ventesRows) {
+  const soldByArticle = new Map()
+
+  for (const vente of ventesRows) {
+    const articleName = (vente?.article || '').trim()
+    if (!articleName) continue
+    const qty = safeNumber(vente?.quantite) || 1
+    soldByArticle.set(articleName, (soldByArticle.get(articleName) || 0) + qty)
+  }
+
+  let topArticle = ''
+  let topQty = 0
+  for (const [name, qty] of soldByArticle.entries()) {
+    if (qty > topQty) {
+      topArticle = name
+      topQty = qty
+    }
+  }
+
+  return topArticle
+}
+
+function Dashboard({ ventes, achats, depenses, dettes, onOpenReports }) {
   const today = new Date()
   const todayLabel = today.toLocaleDateString('fr-FR')
 
@@ -177,6 +221,14 @@ function Dashboard({ ventes, achats, depenses, dettes }) {
         </div>
       </div>
 
+      <button
+        type="button"
+        onClick={onOpenReports}
+        className="mt-4 w-full rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-center text-lg font-bold text-green-700 hover:bg-green-100 transition-colors"
+      >
+        Rapports 📊
+      </button>
+
       <div className="mt-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm flex items-center gap-3">
         <div className="text-3xl" aria-hidden="true">
           🏆
@@ -188,6 +240,106 @@ function Dashboard({ ventes, achats, depenses, dettes }) {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function ReportsScreen({ period, data, loading, onChangePeriod, onBack }) {
+  const benefice = data.totalVentes - data.totalAchats - data.totalDepenses
+  const isPositive = benefice >= 0
+
+  return (
+    <div className="min-h-screen bg-white flex flex-col px-4 py-8 max-w-sm mx-auto w-full">
+      <header className="flex items-center mb-5">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex items-center justify-center w-10 h-10 rounded-full text-gray-700 hover:bg-gray-100 transition-colors"
+          aria-label="Retour au tableau de bord"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="w-7 h-7"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+      </header>
+
+      <h1 className="text-3xl font-bold text-green-600 text-center mb-6">Mes Rapports</h1>
+
+      <div className="grid grid-cols-3 gap-2 mb-6 rounded-2xl bg-gray-100 p-1">
+        <button
+          type="button"
+          onClick={() => onChangePeriod('today')}
+          className={`rounded-xl px-2 py-2 text-sm font-semibold transition-colors ${
+            period === 'today' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-800'
+          }`}
+        >
+          Aujourd&apos;hui
+        </button>
+        <button
+          type="button"
+          onClick={() => onChangePeriod('week')}
+          className={`rounded-xl px-2 py-2 text-sm font-semibold transition-colors ${
+            period === 'week' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-800'
+          }`}
+        >
+          Cette semaine
+        </button>
+        <button
+          type="button"
+          onClick={() => onChangePeriod('month')}
+          className={`rounded-xl px-2 py-2 text-sm font-semibold transition-colors ${
+            period === 'month' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-800'
+          }`}
+        >
+          Ce mois
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="text-center text-gray-500">Chargement des rapports...</p>
+      ) : (
+        <div className="space-y-3">
+          <div className="rounded-2xl border border-green-200 bg-green-50 p-4">
+            <p className="text-sm font-semibold text-green-700">Total des ventes</p>
+            <p className="text-2xl font-bold text-green-900 mt-1">{formatAmount(data.totalVentes)}</p>
+          </div>
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+            <p className="text-sm font-semibold text-red-700">Total des achats</p>
+            <p className="text-2xl font-bold text-red-900 mt-1">{formatAmount(data.totalAchats)}</p>
+          </div>
+          <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
+            <p className="text-sm font-semibold text-orange-700">Total des dépenses</p>
+            <p className="text-2xl font-bold text-orange-900 mt-1">{formatAmount(data.totalDepenses)}</p>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-4">
+            <p className="text-sm font-semibold text-gray-600">Bénéfice net</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{formatAmount(benefice)}</p>
+            <span
+              className={`mt-2 inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                isPositive
+                  ? 'bg-green-100 text-green-700 border border-green-200'
+                  : 'bg-red-100 text-red-700 border border-red-200'
+              }`}
+            >
+              {isPositive ? 'Bénéfice positif' : 'Bénéfice négatif'}
+            </span>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-4">
+            <p className="text-sm font-semibold text-gray-600">Article le plus vendu</p>
+            <p className="text-lg font-bold text-gray-900 mt-1">
+              {data.mostSoldArticle || 'Aucun article vendu sur cette période'}
+            </p>
+          </div>
+        </div>
+      )}
+      <WhatsAppSupportButton />
     </div>
   )
 }
@@ -338,6 +490,14 @@ function App() {
   const [confirmationDetteVisible, setConfirmationDetteVisible] = useState(false)
 
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState(null)
+  const [reportPeriod, setReportPeriod] = useState('today')
+  const [reportsLoading, setReportsLoading] = useState(false)
+  const [reportsData, setReportsData] = useState({
+    totalVentes: 0,
+    totalAchats: 0,
+    totalDepenses: 0,
+    mostSoldArticle: '',
+  })
 
   const storageKey = user?.id ? `${STORAGE_KEY}.${user.id}` : STORAGE_KEY
 
@@ -455,6 +615,10 @@ function App() {
   const openDette = () => {
     setScreen('dette')
     setConfirmationDetteVisible(false)
+  }
+
+  const openReports = () => {
+    setScreen('reports')
   }
 
   const goHome = () => {
@@ -746,6 +910,87 @@ function App() {
       // Storage may be blocked; app will still work in-memory.
     }
   }, [ventes, achats, depenses, dettes, storageKey, user?.id])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function fetchByPeriod(table, dateColumns, startIso, endIso, normalizeRow) {
+      const limit = 3000
+
+      for (const col of dateColumns) {
+        const { data, error } = await supabase
+          .from(table)
+          .select('*')
+          .eq('user_id', user.id)
+          .gte(col, startIso)
+          .lte(col, endIso)
+          .order(col, { ascending: false })
+          .limit(limit)
+
+        if (!error) {
+          return (data || []).map(normalizeRow)
+        }
+      }
+
+      const { data, error } = await supabase.from(table).select('*').eq('user_id', user.id).limit(limit)
+      if (error) throw error
+
+      return (data || []).map(normalizeRow).filter((row) => {
+        const createdAt = getRowCreatedAtIso(row)
+        if (!createdAt) return false
+        const dateMs = new Date(createdAt).getTime()
+        return dateMs >= new Date(startIso).getTime() && dateMs <= new Date(endIso).getTime()
+      })
+    }
+
+    async function loadReports() {
+      if (!user?.id || screen !== 'reports') return
+      setReportsLoading(true)
+
+      const { startIso, endIso } = getPeriodBounds(reportPeriod)
+
+      try {
+        const [ventesRows, achatsRows, depensesRows] = await Promise.all([
+          fetchByPeriod('ventes', ['created_at', 'createdAt', 'created_date'], startIso, endIso, normalizeVenteRow),
+          fetchByPeriod('achats', ['created_at', 'createdAt', 'created_date'], startIso, endIso, normalizeAchatRow),
+          fetchByPeriod(
+            'depenses',
+            ['created_at', 'createdAt', 'created_date'],
+            startIso,
+            endIso,
+            normalizeDepenseRow,
+          ),
+        ])
+
+        if (cancelled) return
+
+        setReportsData({
+          totalVentes: ventesRows.reduce((acc, v) => acc + safeNumber(v.montant), 0),
+          totalAchats: achatsRows.reduce((acc, a) => acc + safeNumber(a.montant), 0),
+          totalDepenses: depensesRows.reduce((acc, d) => acc + safeNumber(d.montant), 0),
+          mostSoldArticle: getMostSoldArticle(ventesRows),
+        })
+      } catch (err) {
+        console.error('Erreur chargement rapports :', err)
+        if (!cancelled) {
+          setReportsData({
+            totalVentes: 0,
+            totalAchats: 0,
+            totalDepenses: 0,
+            mostSoldArticle: '',
+          })
+        }
+      } finally {
+        if (!cancelled) setReportsLoading(false)
+      }
+    }
+
+    loadReports()
+
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id, screen, reportPeriod])
 
   if (authInitLoading) {
     return (
@@ -1140,6 +1385,18 @@ function App() {
     )
   }
 
+  if (screen === 'reports') {
+    return (
+      <ReportsScreen
+        period={reportPeriod}
+        data={reportsData}
+        loading={reportsLoading}
+        onChangePeriod={setReportPeriod}
+        onBack={goHome}
+      />
+    )
+  }
+
   const showInstallBanner =
     screen === 'home' &&
     !isStandalone &&
@@ -1168,7 +1425,13 @@ function App() {
       </div>
       <p className="text-gray-500 text-lg mb-10">Gérez votre activité facilement</p>
       <div className="w-full max-w-sm">
-        <Dashboard ventes={ventes} achats={achats} depenses={depenses} dettes={dettes} />
+        <Dashboard
+          ventes={ventes}
+          achats={achats}
+          depenses={depenses}
+          dettes={dettes}
+          onOpenReports={openReports}
+        />
 
         <div className="grid grid-cols-2 gap-4 mt-6">
           {buttons.map((btn) => (
