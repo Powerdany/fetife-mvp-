@@ -277,6 +277,29 @@ function AuthScreen({
   )
 }
 
+function WhatsAppSupportButton() {
+  const whatsappSupportUrl =
+    'https://wa.me/22997376087?text=Bonjour,%20j%27ai%20besoin%20d%27aide%20avec%20l%27app%20fetife'
+
+  return (
+    <a
+      href={whatsappSupportUrl}
+      target="_blank"
+      rel="noreferrer"
+      className="fixed bottom-4 right-4 z-50 flex flex-col items-center gap-1"
+      aria-label="Contacter le support WhatsApp"
+    >
+      <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#25D366] text-white shadow-md">
+        <svg viewBox="0 0 32 32" className="h-7 w-7 fill-current" aria-hidden="true">
+          <path d="M19.11 17.27c-.29-.15-1.69-.83-1.95-.93-.26-.09-.45-.14-.64.14-.19.29-.74.93-.91 1.12-.17.2-.34.22-.63.07-.29-.14-1.2-.44-2.29-1.4-.85-.75-1.42-1.67-1.59-1.95-.17-.29-.02-.44.13-.59.13-.12.29-.32.44-.49.14-.17.19-.29.29-.49.1-.2.05-.36-.02-.51-.07-.15-.64-1.54-.88-2.12-.23-.55-.47-.47-.64-.48l-.55-.01c-.2 0-.51.07-.77.36-.26.29-.99.97-.99 2.37s1.01 2.76 1.15 2.95c.14.2 1.98 3.02 4.8 4.23.67.29 1.19.46 1.59.59.67.21 1.27.18 1.75.11.53-.08 1.69-.69 1.93-1.36.24-.68.24-1.26.17-1.37-.07-.12-.26-.2-.55-.34z" />
+          <path d="M16.02 3.2c-6.96 0-12.62 5.66-12.62 12.62 0 2.22.58 4.39 1.68 6.29L3.2 28.8l6.88-1.81a12.57 12.57 0 0 0 5.94 1.52h.01c6.96 0 12.62-5.66 12.62-12.62S22.98 3.2 16.02 3.2zm0 23.2h-.01a10.51 10.51 0 0 1-5.36-1.47l-.39-.23-4.08 1.07 1.09-3.98-.25-.41a10.5 10.5 0 1 1 9 5.02z" />
+        </svg>
+      </span>
+      <span className="text-xs font-medium text-gray-600">Aide</span>
+    </a>
+  )
+}
+
 function App() {
   const [session, setSession] = useState(null)
   const [user, setUser] = useState(null)
@@ -839,6 +862,7 @@ function App() {
         >
           Enregistrer
         </button>
+        <WhatsAppSupportButton />
       </div>
     )
   }
@@ -929,6 +953,7 @@ function App() {
         >
           Enregistrer
         </button>
+        <WhatsAppSupportButton />
       </div>
     )
   }
@@ -1006,6 +1031,7 @@ function App() {
         >
           Enregistrer
         </button>
+        <WhatsAppSupportButton />
       </div>
     )
   }
@@ -1109,6 +1135,7 @@ function App() {
         >
           Enregistrer
         </button>
+        <WhatsAppSupportButton />
       </div>
     )
   }
@@ -1189,6 +1216,7 @@ function App() {
           </div>
         </div>
       )}
+      <WhatsAppSupportButton />
     </div>
   )
 }
