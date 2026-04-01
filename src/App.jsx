@@ -17,9 +17,13 @@ function safeNumber(value) {
   return Number.isFinite(num) ? num : 0
 }
 
-function formatAmount(value) {
-  const n = safeNumber(value)
-  return n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+function formatMontant(montant) {
+  return (
+    Math.round(safeNumber(montant))
+      .toLocaleString('fr-FR')
+      .replace(/,/g, ' ')
+      .replace(/\u202f|\u00a0/g, ' ') + ' FCFA'
+  )
 }
 
 function isSameLocalDay(isoDate, today) {
@@ -228,7 +232,7 @@ function Dashboard({ ventes, achats, depenses, dettes, onOpenReports }) {
           <div className="text-right">
             <div className="text-green-200 text-sm font-semibold">Bénéfice du jour</div>
             <div className="text-white text-3xl font-bold leading-none mt-1">
-              {formatAmount(beneficeJour)}
+              {formatMontant(beneficeJour)}
             </div>
           </div>
         </div>
@@ -249,19 +253,19 @@ function Dashboard({ ventes, achats, depenses, dettes, onOpenReports }) {
       <div className="grid grid-cols-2 gap-4 mt-4">
         <div className="rounded-2xl border border-green-200 bg-green-50 p-4">
           <div className="text-green-700 text-sm font-semibold">Ventes</div>
-          <div className="text-green-800 text-3xl font-bold mt-2">{formatAmount(totalVentes)}</div>
+          <div className="text-green-800 text-3xl font-bold mt-2">{formatMontant(totalVentes)}</div>
         </div>
         <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
           <div className="text-red-700 text-sm font-semibold">Achats</div>
-          <div className="text-red-800 text-3xl font-bold mt-2">{formatAmount(totalAchats)}</div>
+          <div className="text-red-800 text-3xl font-bold mt-2">{formatMontant(totalAchats)}</div>
         </div>
         <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
           <div className="text-orange-700 text-sm font-semibold">Dépenses</div>
-          <div className="text-orange-800 text-3xl font-bold mt-2">{formatAmount(totalDepenses)}</div>
+          <div className="text-orange-800 text-3xl font-bold mt-2">{formatMontant(totalDepenses)}</div>
         </div>
         <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
           <div className="text-blue-700 text-sm font-semibold">Dettes actives</div>
-          <div className="text-blue-800 text-3xl font-bold mt-2">{formatAmount(dettesActives)}</div>
+          <div className="text-blue-800 text-3xl font-bold mt-2">{formatMontant(dettesActives)}</div>
         </div>
       </div>
 
@@ -318,10 +322,10 @@ function ReportsScreen({ period, data, loading, userEmail, onChangePeriod, onBac
       doc.text(`Email: ${userEmail || 'Non disponible'}`, 14, 54)
 
       const rows = [
-        ['Total des ventes', `${formatAmount(data.totalVentes)} FCFA`],
-        ['Total des achats', `${formatAmount(data.totalAchats)} FCFA`],
-        ['Total des dépenses', `${formatAmount(data.totalDepenses)} FCFA`],
-        ['Bénéfice net', `${formatAmount(benefice)} FCFA`],
+        ['Total des ventes', formatMontant(data.totalVentes)],
+        ['Total des achats', formatMontant(data.totalAchats)],
+        ['Total des dépenses', formatMontant(data.totalDepenses)],
+        ['Bénéfice net', formatMontant(benefice)],
       ]
 
       let y = 68
@@ -343,7 +347,7 @@ function ReportsScreen({ period, data, loading, userEmail, onChangePeriod, onBac
 
       y += 8
       const profitableArticleText = data.mostProfitableArticleName
-        ? `${data.mostProfitableArticleName} (${formatAmount(data.mostProfitableArticleProfit)} FCFA)`
+        ? `${data.mostProfitableArticleName} (${formatMontant(data.mostProfitableArticleProfit)})`
         : 'Aucun article rentable sur cette période'
       doc.setFontSize(12)
       doc.text(`Article le plus rentable: ${profitableArticleText}`, 14, y)
@@ -422,19 +426,19 @@ function ReportsScreen({ period, data, loading, userEmail, onChangePeriod, onBac
         <div className="space-y-3">
           <div className="rounded-2xl border border-green-200 bg-green-50 p-4">
             <p className="text-sm font-semibold text-green-700">Total des ventes</p>
-            <p className="text-2xl font-bold text-green-900 mt-1">{formatAmount(data.totalVentes)}</p>
+            <p className="text-2xl font-bold text-green-900 mt-1">{formatMontant(data.totalVentes)}</p>
           </div>
           <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
             <p className="text-sm font-semibold text-red-700">Total des achats</p>
-            <p className="text-2xl font-bold text-red-900 mt-1">{formatAmount(data.totalAchats)}</p>
+            <p className="text-2xl font-bold text-red-900 mt-1">{formatMontant(data.totalAchats)}</p>
           </div>
           <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
             <p className="text-sm font-semibold text-orange-700">Total des dépenses</p>
-            <p className="text-2xl font-bold text-orange-900 mt-1">{formatAmount(data.totalDepenses)}</p>
+            <p className="text-2xl font-bold text-orange-900 mt-1">{formatMontant(data.totalDepenses)}</p>
           </div>
           <div className="rounded-2xl border border-gray-200 bg-white p-4">
             <p className="text-sm font-semibold text-gray-600">Bénéfice net</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{formatAmount(benefice)}</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{formatMontant(benefice)}</p>
             <span
               className={`mt-2 inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
                 isPositive
@@ -449,7 +453,7 @@ function ReportsScreen({ period, data, loading, userEmail, onChangePeriod, onBac
             <p className="text-sm font-semibold text-gray-600">Article le plus rentable</p>
             <p className="text-lg font-bold text-gray-900 mt-1">
               {data.mostProfitableArticleName
-                ? `${data.mostProfitableArticleName} (${formatAmount(data.mostProfitableArticleProfit)} FCFA)`
+                ? `${data.mostProfitableArticleName} (${formatMontant(data.mostProfitableArticleProfit)})`
                 : 'Aucun article rentable sur cette période'}
             </p>
           </div>
