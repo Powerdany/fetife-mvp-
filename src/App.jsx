@@ -17,7 +17,7 @@ const buttons = [
   { emoji: '🤝', label: 'Dette', bg: 'bg-blue-500' },
 ]
 
-const STORAGE_KEY = 'fetife.dashboard.v1'
+const STORAGE_KEY = 'fedife.dashboard.v1'
 
 function safeNumber(value) {
   const num = Number(value)
@@ -423,11 +423,11 @@ function ReportsScreen({ period, data, loading, userEmail, onChangePeriod, onBac
   const handleDownloadPdf = async () => {
     try {
       const doc = new jsPDF()
-      const logoDataUrl = await loadImageAsDataUrl('/logo_fetife.png')
+      const logoDataUrl = await loadImageAsDataUrl('/logo_fedife.png')
 
       doc.addImage(logoDataUrl, 'PNG', 14, 10, 28, 28)
       doc.setFontSize(18)
-      doc.text("Rapport d'activité fetife", 50, 20)
+      doc.text("Rapport d'activité fedife", 50, 20)
       doc.setFontSize(11)
       doc.text(`Période: ${periodWithDate}`, 14, 46)
       doc.text(`Email: ${userEmail || 'Non disponible'}`, 14, 54)
@@ -465,11 +465,11 @@ function ReportsScreen({ period, data, loading, userEmail, onChangePeriod, onBac
 
       doc.setFontSize(10)
       doc.setTextColor(90, 90, 90)
-      doc.text('Généré par fetife - fetife-mvp.vercel.app', 14, 285)
+      doc.text('Généré par fedife - fedife-mvp.vercel.app', 14, 285)
 
       const filePeriod = sanitizeForFileName(getPeriodLabel(period))
       const fileDate = new Date().toISOString().slice(0, 10)
-      doc.save(`fetife-rapport-${filePeriod}-${fileDate}.pdf`)
+      doc.save(`fedife-rapport-${filePeriod}-${fileDate}.pdf`)
       setPdfNoticeVisible(true)
     } catch (error) {
       console.error('Erreur génération PDF :', error)
@@ -606,7 +606,7 @@ function AuthScreen({
     <div className="min-h-screen bg-white flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-sm rounded-3xl border border-green-100 bg-white p-6 shadow-sm">
         <div className="flex justify-center mb-2">
-          <img src="/logo_fetife.png" alt="fetife" className="h-20" />
+          <img src="/logo_fedife.png" alt="fedife" className="h-20" />
         </div>
         <p className="text-gray-500 text-center mb-8">Gérez votre activité plus facilement</p>
 
@@ -675,7 +675,7 @@ function AuthScreen({
 
 function WhatsAppSupportButton() {
   const whatsappSupportUrl =
-    'https://wa.me/22997376087?text=Bonjour,%20j%27ai%20besoin%20d%27aide%20avec%20l%27app%20fetife'
+    'https://wa.me/22997376087?text=Bonjour,%20j%27ai%20besoin%20d%27aide%20avec%20l%27app%20fedife'
 
   return (
     <a
@@ -1870,7 +1870,7 @@ function App() {
         </button>
       </div>
       <div className="mb-2">
-        <img src="/logo_fetife.png" alt="fetife" className="h-20" />
+        <img src="/logo_fedife.png" alt="fedife" className="h-20" />
       </div>
       <p className="text-gray-500 text-lg mb-10">Gérez votre activité facilement</p>
       <div className="w-full max-w-sm">
@@ -1916,7 +1916,7 @@ function App() {
         >
           <div className="mx-auto flex max-w-sm items-center justify-between gap-3">
             <p className="text-sm font-medium text-green-900/90 leading-snug">
-              Installez fetife sur votre téléphone
+              Installez fedife sur votre téléphone
             </p>
             <button
               type="button"
