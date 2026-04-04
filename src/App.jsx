@@ -2,6 +2,13 @@ import { useEffect, useState } from 'react'
 import { jsPDF } from 'jspdf'
 import './App.css'
 import { supabase } from './supabase'
+import {
+  savePending,
+  getDashboardCache,
+  getPendingForUser,
+  saveDashboardCache,
+  syncPendingToSupabase,
+} from './offlineDb'
 
 const buttons = [
   { emoji: '📈', label: 'Vente', bg: 'bg-green-500' },
@@ -91,6 +98,110 @@ function normalizeDetteRow(row) {
     description: row?.description ?? '',
     createdAt,
   }
+}
+
+function rowsFromPendingItems(items) {
+  const ventes = []
+  const achats = []
+  const depenses = []
+  const dettes = []
+  for (const item of items) {
+    const at = item.createdAt
+    switch (item.kind) {
+      case 'vente':
+        ventes.push(
+          normalizeVenteRow({
+            id: `pending-${item.id}`,
+            article: item.payload.article,
+            prix_vente: item.payload.prix_vente,
+            quantite: item.payload.quantite,
+            total: item.payload.total,
+            created_at: at,
+          }),
+        )
+        break
+      case 'achat':
+        achats.push(
+          normalizeAchatRow({
+            id: `pending-${item.id}`,
+            article: item.payload.article,
+            prix_achat: item.payload.prix_achat,
+            quantite: item.payload.quantite,
+            total: item.payload.total,
+            created_at: at,
+          }),
+        )
+        break
+      case 'depense':
+        depenses.push(
+          normalizeDepenseRow({
+            id: `pending-${item.id}`,
+            categorie: item.payload.categorie,
+            montant: item.payload.montant,
+            created_at: at,
+          }),
+        )
+        break
+      case 'dette':
+        dettes.push(
+          normalizeDetteRow({
+            id: `pending-${item.id}`,
+            nom_personne: item.payload.nom_personne,
+            type: item.payload.type,
+            montant: item.payload.montant,
+            description: item.payload.description ?? '',
+            created_at: at,
+          }),
+        )
+        break
+      default:
+        break
+    }
+  }
+  return { ventes, achats, depenses, dettes }
+}
+
+function mergeCachedDashboard(cache, pendingBuckets, today) {
+  const ventes = [...(cache?.ventes ?? [])]
+  const achats = [...(cache?.achats ?? [])]
+  const depenses = [...(cache?.depenses ?? [])]
+  const dettes = [...(cache?.dettes ?? [])]
+
+  for (const v of pendingBuckets.ventes) {
+    if (isSameLocalDay(v.createdAt, today)) ventes.push(v)
+  }
+  for (const a of pendingBuckets.achats) {
+    if (isSameLocalDay(a.createdAt, today)) achats.push(a)
+  }
+  for (const d of pendingBuckets.depenses) {
+    if (isSameLocalDay(d.createdAt, today)) depenses.push(d)
+  }
+  dettes.push(...pendingBuckets.dettes)
+
+  return { ventes, achats, depenses, dettes }
+}
+
+function ConnectivityBanner({ online }) {
+  if (online) {
+    return (
+      <div
+        className="w-full py-2.5 px-3 text-center text-sm font-semibold text-green-900 bg-green-100 border-b border-green-200/80"
+        role="status"
+        aria-live="polite"
+      >
+        En ligne ✓
+      </div>
+    )
+  }
+  return (
+    <div
+      className="w-full py-2.5 px-3 text-center text-sm font-semibold text-amber-900 bg-amber-100 border-b border-amber-200/80"
+      role="status"
+      aria-live="polite"
+    >
+      Hors-ligne — données sauvegardées localement
+    </div>
+  )
 }
 
 function getPeriodBounds(periodKey) {
@@ -623,6 +734,10 @@ function App() {
   const [confirmationDetteVisible, setConfirmationDetteVisible] = useState(false)
 
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState(null)
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true,
+  )
+  const [dataRefreshToken, setDataRefreshToken] = useState(0)
   const [reportPeriod, setReportPeriod] = useState('today')
   const [reportsLoading, setReportsLoading] = useState(false)
   const [reportsData, setReportsData] = useState({
@@ -645,6 +760,26 @@ function App() {
     typeof window !== 'undefined' &&
     (window.matchMedia('(display-mode: standalone)').matches ||
       window.navigator?.standalone === true)
+
+  useEffect(() => {
+    const onLine = () => setIsOnline(true)
+    const offLine = () => setIsOnline(false)
+    window.addEventListener('online', onLine)
+    window.addEventListener('offline', offLine)
+    return () => {
+      window.removeEventListener('online', onLine)
+      window.removeEventListener('offline', offLine)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!user?.id) return
+    const onOnline = () => {
+      setDataRefreshToken((n) => n + 1)
+    }
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
+  }, [user?.id])
 
   useEffect(() => {
     const onBeforeInstallPrompt = (e) => {
@@ -776,19 +911,45 @@ function App() {
     }
 
     const createdAtFallback = new Date().toISOString()
+    const payload = {
+      article: articleTrimmed,
+      prix_vente: p,
+      quantite: q,
+      total: montant,
+      user_id: user.id,
+    }
+
+    const pushLocalVente = async (pendingId) => {
+      const normalized = normalizeVenteRow({
+        id: `pending-${pendingId}`,
+        article: articleTrimmed,
+        prix_vente: p,
+        quantite: q,
+        total: montant,
+        created_at: createdAtFallback,
+      })
+      setVentes((prev) => [
+        ...prev,
+        {
+          ...normalized,
+          createdAt: normalized.createdAt || createdAtFallback,
+          id: normalized.id ?? pendingId,
+        },
+      ])
+      setConfirmationVisible(true)
+      setArticle('')
+      setPrix('')
+      setQuantite('')
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const pendingId = await savePending(user.id, 'vente', payload)
+      await pushLocalVente(pendingId)
+      return
+    }
 
     try {
-      const { data, error } = await supabase
-        .from('ventes')
-        .insert({
-          article: articleTrimmed,
-          prix_vente: p,
-          quantite: q,
-          total: montant,
-          user_id: user.id,
-        })
-        .select('*')
-        .single()
+      const { data, error } = await supabase.from('ventes').insert(payload).select('*').single()
 
       if (error) throw error
 
@@ -808,6 +969,12 @@ function App() {
       setQuantite('')
     } catch (err) {
       console.error("Erreur Supabase lors de l'enregistrement d'une vente :", err)
+      try {
+        const pendingId = await savePending(user.id, 'vente', payload)
+        await pushLocalVente(pendingId)
+      } catch (queueErr) {
+        console.error('Impossible de mettre la vente en file hors-ligne :', queueErr)
+      }
     }
   }
 
@@ -824,19 +991,45 @@ function App() {
     }
 
     const createdAtFallback = new Date().toISOString()
+    const payload = {
+      article: articleTrimmed,
+      prix_achat: p,
+      quantite: q,
+      total: montant,
+      user_id: user.id,
+    }
+
+    const pushLocalAchat = async (pendingId) => {
+      const normalized = normalizeAchatRow({
+        id: `pending-${pendingId}`,
+        article: articleTrimmed,
+        prix_achat: p,
+        quantite: q,
+        total: montant,
+        created_at: createdAtFallback,
+      })
+      setAchats((prev) => [
+        ...prev,
+        {
+          ...normalized,
+          createdAt: normalized.createdAt || createdAtFallback,
+          id: normalized.id ?? pendingId,
+        },
+      ])
+      setConfirmationAchatVisible(true)
+      setAchatArticle('')
+      setAchatPrix('')
+      setAchatQuantite('')
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const pendingId = await savePending(user.id, 'achat', payload)
+      await pushLocalAchat(pendingId)
+      return
+    }
 
     try {
-      const { data, error } = await supabase
-        .from('achats')
-        .insert({
-          article: articleTrimmed,
-          prix_achat: p,
-          quantite: q,
-          total: montant,
-          user_id: user.id,
-        })
-        .select('*')
-        .single()
+      const { data, error } = await supabase.from('achats').insert(payload).select('*').single()
 
       if (error) throw error
 
@@ -856,6 +1049,12 @@ function App() {
       setAchatQuantite('')
     } catch (err) {
       console.error("Erreur Supabase lors de l'enregistrement d'un achat :", err)
+      try {
+        const pendingId = await savePending(user.id, 'achat', payload)
+        await pushLocalAchat(pendingId)
+      } catch (queueErr) {
+        console.error("Impossible de mettre l'achat en file hors-ligne :", queueErr)
+      }
     }
   }
 
@@ -869,17 +1068,39 @@ function App() {
     const montant = safeNumber(montantDepense)
 
     const createdAtFallback = new Date().toISOString()
+    const payload = {
+      categorie: categorieDepense,
+      montant,
+      user_id: user.id,
+    }
+
+    const pushLocalDepense = async (pendingId) => {
+      const normalized = normalizeDepenseRow({
+        id: `pending-${pendingId}`,
+        categorie: categorieDepense,
+        montant,
+        created_at: createdAtFallback,
+      })
+      setDepenses((prev) => [
+        ...prev,
+        {
+          ...normalized,
+          createdAt: normalized.createdAt || createdAtFallback,
+          id: normalized.id ?? pendingId,
+        },
+      ])
+      setConfirmationDepenseVisible(true)
+      setMontantDepense('')
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const pendingId = await savePending(user.id, 'depense', payload)
+      await pushLocalDepense(pendingId)
+      return
+    }
 
     try {
-      const { data, error } = await supabase
-        .from('depenses')
-        .insert({
-          categorie: categorieDepense,
-          montant,
-          user_id: user.id,
-        })
-        .select('*')
-        .single()
+      const { data, error } = await supabase.from('depenses').insert(payload).select('*').single()
 
       if (error) throw error
 
@@ -897,6 +1118,12 @@ function App() {
       setMontantDepense('')
     } catch (err) {
       console.error("Erreur Supabase lors de l'enregistrement d'une dépense :", err)
+      try {
+        const pendingId = await savePending(user.id, 'depense', payload)
+        await pushLocalDepense(pendingId)
+      } catch (queueErr) {
+        console.error('Impossible de mettre la dépense en file hors-ligne :', queueErr)
+      }
     }
   }
 
@@ -910,19 +1137,45 @@ function App() {
     }
 
     const createdAtFallback = new Date().toISOString()
+    const payload = {
+      nom_personne: nomTrimmed,
+      type: typeDette,
+      montant,
+      description: descriptionDette.trim(),
+      user_id: user.id,
+    }
+
+    const pushLocalDette = async (pendingId) => {
+      const normalized = normalizeDetteRow({
+        id: `pending-${pendingId}`,
+        nom_personne: nomTrimmed,
+        type: typeDette,
+        montant,
+        description: descriptionDette.trim(),
+        created_at: createdAtFallback,
+      })
+      setDettes((prev) => [
+        ...prev,
+        {
+          ...normalized,
+          createdAt: normalized.createdAt || createdAtFallback,
+          id: normalized.id ?? pendingId,
+        },
+      ])
+      setConfirmationDetteVisible(true)
+      setNomPersonneDette('')
+      setMontantDette('')
+      setDescriptionDette('')
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const pendingId = await savePending(user.id, 'dette', payload)
+      await pushLocalDette(pendingId)
+      return
+    }
 
     try {
-      const { data, error } = await supabase
-        .from('dettes')
-        .insert({
-          nom_personne: nomTrimmed,
-          type: typeDette,
-          montant,
-          description: descriptionDette.trim(),
-          user_id: user.id,
-        })
-        .select('*')
-        .single()
+      const { data, error } = await supabase.from('dettes').insert(payload).select('*').single()
 
       if (error) throw error
 
@@ -942,6 +1195,12 @@ function App() {
       setDescriptionDette('')
     } catch (err) {
       console.error("Erreur Supabase lors de l'enregistrement d'une dette :", err)
+      try {
+        const pendingId = await savePending(user.id, 'dette', payload)
+        await pushLocalDette(pendingId)
+      } catch (queueErr) {
+        console.error('Impossible de mettre la dette en file hors-ligne :', queueErr)
+      }
     }
   }
 
@@ -951,8 +1210,6 @@ function App() {
     async function fetchForToday(table, dateColumns) {
       const limit = 2000
 
-      // On essaie de trier par une colonne date (si elle existe dans ton schéma),
-      // puis on filtre "aujourd'hui" côté client pour éviter les problèmes de fuseau.
       for (const col of dateColumns) {
         const { data, error } = await supabase
           .from(table)
@@ -984,10 +1241,51 @@ function App() {
 
       if (cancelled) return
 
-      setVentes((ventesRows || []).map(normalizeVenteRow).filter((v) => isSameLocalDay(v.createdAt, today)))
-      setAchats((achatsRows || []).map(normalizeAchatRow).filter((a) => isSameLocalDay(a.createdAt, today)))
-      setDepenses((depensesRows || []).map(normalizeDepenseRow).filter((d) => isSameLocalDay(d.createdAt, today)))
-      setDettes((dettesRows || []).map(normalizeDetteRow))
+      const v = (ventesRows || []).map(normalizeVenteRow).filter((row) => isSameLocalDay(row.createdAt, today))
+      const a = (achatsRows || []).map(normalizeAchatRow).filter((row) => isSameLocalDay(row.createdAt, today))
+      const d = (depensesRows || []).map(normalizeDepenseRow).filter((row) => isSameLocalDay(row.createdAt, today))
+      const t = (dettesRows || []).map(normalizeDetteRow)
+
+      setVentes(v)
+      setAchats(a)
+      setDepenses(d)
+      setDettes(t)
+
+      await saveDashboardCache(user.id, { ventes: v, achats: a, depenses: d, dettes: t })
+    }
+
+    async function applyIndexedOffline() {
+      const cache = await getDashboardCache(user.id)
+      const pending = await getPendingForUser(user.id)
+      const buckets = rowsFromPendingItems(pending)
+      const today = new Date()
+      const merged = mergeCachedDashboard(cache, buckets, today)
+      if (cancelled) return
+      setVentes(merged.ventes)
+      setAchats(merged.achats)
+      setDepenses(merged.depenses)
+      setDettes(merged.dettes)
+    }
+
+    function applyLocalStorageFallback() {
+      try {
+        const raw = localStorage.getItem(storageKey)
+        if (!raw) return
+        const parsed = JSON.parse(raw)
+        const today = new Date()
+        setVentes(
+          (Array.isArray(parsed?.ventes) ? parsed.ventes : []).filter((v) => isSameLocalDay(v.createdAt, today)),
+        )
+        setAchats(
+          (Array.isArray(parsed?.achats) ? parsed.achats : []).filter((a) => isSameLocalDay(a.createdAt, today)),
+        )
+        setDepenses(
+          (Array.isArray(parsed?.depenses) ? parsed.depenses : []).filter((d) => isSameLocalDay(d.createdAt, today)),
+        )
+        setDettes(Array.isArray(parsed?.dettes) ? parsed.dettes : [])
+      } catch {
+        // Ignore invalid localStorage content
+      }
     }
 
     if (!user?.id) {
@@ -1000,33 +1298,29 @@ function App() {
       }
     }
 
-    loadFromSupabase()
-      .catch((err) => {
-        console.error("Erreur chargement Supabase (fallback localStorage) :", err)
-        try {
-          const raw = localStorage.getItem(storageKey)
-          if (!raw) return
-          const parsed = JSON.parse(raw)
-          const today = new Date()
-          setVentes(
-            (Array.isArray(parsed?.ventes) ? parsed.ventes : []).filter((v) => isSameLocalDay(v.createdAt, today)),
-          )
-          setAchats(
-            (Array.isArray(parsed?.achats) ? parsed.achats : []).filter((a) => isSameLocalDay(a.createdAt, today)),
-          )
-          setDepenses(
-            (Array.isArray(parsed?.depenses) ? parsed.depenses : []).filter((d) => isSameLocalDay(d.createdAt, today)),
-          )
-          setDettes(Array.isArray(parsed?.dettes) ? parsed.dettes : [])
-        } catch {
-          // Ignore invalid localStorage content
+    ;(async () => {
+      try {
+        if (typeof navigator !== 'undefined' && navigator.onLine) {
+          await syncPendingToSupabase(supabase, user.id)
         }
-      })
+        if (cancelled) return
+        await loadFromSupabase()
+      } catch (err) {
+        console.error('Erreur chargement Supabase (fallback hors-ligne) :', err)
+        if (cancelled) return
+        try {
+          await applyIndexedOffline()
+        } catch (idbErr) {
+          console.error('Erreur lecture IndexedDB :', idbErr)
+          applyLocalStorageFallback()
+        }
+      }
+    })()
 
     return () => {
       cancelled = true
     }
-  }, [user?.id, storageKey])
+  }, [user?.id, storageKey, dataRefreshToken])
 
   useEffect(() => {
     try {
@@ -1160,7 +1454,9 @@ function App() {
 
   if (screen === 'vente') {
     return (
-      <div className="min-h-screen bg-white flex flex-col px-4 py-8 max-w-sm mx-auto w-full">
+      <div className="min-h-screen bg-white flex flex-col max-w-sm mx-auto w-full">
+        <ConnectivityBanner online={isOnline} />
+        <div className="flex flex-col flex-1 px-4 py-8">
         <header className="flex items-center mb-6">
           <button
             type="button"
@@ -1245,13 +1541,16 @@ function App() {
           Enregistrer
         </button>
         <WhatsAppSupportButton />
+        </div>
       </div>
     )
   }
 
   if (screen === 'achat') {
     return (
-      <div className="min-h-screen bg-white flex flex-col px-4 py-8 max-w-sm mx-auto w-full">
+      <div className="min-h-screen bg-white flex flex-col max-w-sm mx-auto w-full">
+        <ConnectivityBanner online={isOnline} />
+        <div className="flex flex-col flex-1 px-4 py-8">
         <header className="flex items-center mb-6">
           <button
             type="button"
@@ -1336,13 +1635,16 @@ function App() {
           Enregistrer
         </button>
         <WhatsAppSupportButton />
+        </div>
       </div>
     )
   }
 
   if (screen === 'depense') {
     return (
-      <div className="min-h-screen bg-white flex flex-col px-4 py-8 max-w-sm mx-auto w-full">
+      <div className="min-h-screen bg-white flex flex-col max-w-sm mx-auto w-full">
+        <ConnectivityBanner online={isOnline} />
+        <div className="flex flex-col flex-1 px-4 py-8">
         <header className="flex items-center mb-6">
           <button
             type="button"
@@ -1414,13 +1716,16 @@ function App() {
           Enregistrer
         </button>
         <WhatsAppSupportButton />
+        </div>
       </div>
     )
   }
 
   if (screen === 'dette') {
     return (
-      <div className="min-h-screen bg-white flex flex-col px-4 py-8 max-w-sm mx-auto w-full">
+      <div className="min-h-screen bg-white flex flex-col max-w-sm mx-auto w-full">
+        <ConnectivityBanner online={isOnline} />
+        <div className="flex flex-col flex-1 px-4 py-8">
         <header className="flex items-center mb-6">
           <button
             type="button"
@@ -1518,20 +1823,24 @@ function App() {
           Enregistrer
         </button>
         <WhatsAppSupportButton />
+        </div>
       </div>
     )
   }
 
   if (screen === 'reports') {
     return (
-      <ReportsScreen
-        period={reportPeriod}
-        data={reportsData}
-        loading={reportsLoading}
-        userEmail={user?.email || ''}
-        onChangePeriod={setReportPeriod}
-        onBack={goHome}
-      />
+      <>
+        <ConnectivityBanner online={isOnline} />
+        <ReportsScreen
+          period={reportPeriod}
+          data={reportsData}
+          loading={reportsLoading}
+          userEmail={user?.email || ''}
+          onChangePeriod={setReportPeriod}
+          onBack={goHome}
+        />
+      </>
     )
   }
 
@@ -1548,7 +1857,9 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-white flex flex-col items-center px-4 py-8 pb-[max(2rem,env(safe-area-inset-bottom,0px)+5.5rem)]">
+    <div className="min-h-screen bg-white flex flex-col w-full">
+      <ConnectivityBanner online={isOnline} />
+      <div className="flex flex-col items-center px-4 py-8 pb-[max(2rem,env(safe-area-inset-bottom,0px)+5.5rem)] flex-1">
       <div className="w-full max-w-sm flex justify-end mb-2">
         <button
           type="button"
@@ -1618,6 +1929,7 @@ function App() {
         </div>
       )}
       <WhatsAppSupportButton />
+      </div>
     </div>
   )
 }
